@@ -1,14 +1,16 @@
 package com.bdravid.wordstream;
 
+import com.bdravid.numberstream.KafkaConsumerBuilder;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.ConsumerRecords;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
-import org.apache.kafka.common.TopicPartition;
+import org.apache.kafka.common.serialization.StringDeserializer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.Collections;
 import java.util.Iterator;
+import java.util.UUID;
 import java.util.concurrent.Executors;
 import java.util.concurrent.LinkedBlockingQueue;
 
@@ -21,8 +23,9 @@ public class WordStreamConsumer {
     private boolean consume = true;
     private KafkaConsumer<String, String> consumer;
 
-    public void init(){
-        this.consumer = KafkaInteractions.kafkaConsumerSupplier.get();
+    public void init(String consumerId, String groupId){
+        this.consumer = new KafkaConsumerBuilder<String, String>("localhost:9093", groupId,
+                StringDeserializer.class, StringDeserializer.class).withClientId(consumerId).build();
     }
 
     public void startConsumption(String topic, boolean fromBeginning) {
@@ -42,7 +45,7 @@ public class WordStreamConsumer {
     private void seekToBeginningIfNeeded(boolean fromBeginning) {
         if (fromBeginning) {
             consumer.poll(0);
-            consumer.seekToBeginning(Collections.singleton(new TopicPartition(TOPIC_WORD_STREAM, 0)));
+            consumer.seekToBeginning(Collections.emptyList());
         }
     }
 
@@ -54,10 +57,21 @@ public class WordStreamConsumer {
 
     public static void main(String[] args) throws InterruptedException {
         WordStreamConsumer wordStreamConsumer = new WordStreamConsumer();
-        wordStreamConsumer.init();
+        String consumerId = null;
+        String groupId;
+        if (args.length > 0) {
+            consumerId = args[0];
+        }
+        if (args.length > 1) {
+            groupId = args[1];
+        } else {
+            groupId = UUID.randomUUID().toString();
+        }
+
+        wordStreamConsumer.init(consumerId, groupId);
 
         try {
-            Executors.newFixedThreadPool(1).submit(()->
+            Executors.newSingleThreadExecutor().submit(()->
                     wordStreamConsumer.startConsumption(TOPIC_WORD_STREAM, true));
             wordStreamConsumer.printMessages();
         } finally {
